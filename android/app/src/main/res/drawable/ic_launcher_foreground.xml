@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+
+    <!-- 外圈装饰 - 声波纹 -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.3" android:pathData="M54,18c19.88,0 36,16.12 36,36s-16.12,36 -36,36s-36,-16.12 -36,-36S34.12,18 54,18M54,14c-22.09,0 -40,17.91 -40,40s17.91,40 40,40s40,-17.91 40,-40S76.09,14 54,14z" />
+
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.5" android:pathData="M54,26c15.46,0 28,12.54 28,28s-12.54,28 -28,28s-28,-12.54 -28,-28S38.54,26 54,26M54,22c-17.67,0 -32,14.33 -32,32s14.33,32 32,32s32,-14.33 32,-32S71.67,22 54,22z" />
+
+    <!-- 中心圆 -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,34c11.05,0 20,8.95 20,20s-8.95,20 -20,20s-20,-8.95 -20,-20S42.95,34 54,34z" />
+
+    <!-- 麦克风图标 -->
+    <!-- 麦克风主体 -->
+    <path android:fillColor="#00BFA5" android:pathData="M54,42c-2.76,0 -5,2.24 -5,5v8c0,2.76 2.24,5 5,5s5,-2.24 5,-5v-8C59,44.24 56.76,42 54,42z" />
+
+    <!-- 麦克风底座和支架 -->
+    <path android:fillColor="#00BFA5" android:pathData="M62,55c0,4.14 -3.36,7.5 -7.5,7.5S47,59.14 47,55h-2.5c0,5.1 3.81,9.3 8.75,9.88V68h-3.75v2.5h10v-2.5h-3.75v-3.12c4.94,-0.58 8.75,-4.78 8.75,-9.88H62z" />
+</vector>

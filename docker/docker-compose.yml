@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # 信令服务器
+  signaling:
+    build:
+      context: ../server
+      dockerfile: ../docker/Dockerfile.server
+    container_name: miclink-signaling
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - miclink
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # TURN/STUN服务器
+  coturn:
+    image: coturn/coturn:latest
+    container_name: miclink-coturn
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    restart: unless-stopped
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+networks:
+  miclink:
+    driver: bridge
