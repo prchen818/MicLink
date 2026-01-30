@@ -8,12 +8,21 @@ android {
     namespace = "com.miclink"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../miclink-release.keystore")
+            storePassword = "miclink123"
+            keyAlias = "miclink"
+            keyPassword = "miclink123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.miclink"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0.2"
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -24,6 +33,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -55,6 +55,10 @@ class MicLinkAudioManager(private val context: Context) {
     // 设备变化监听器
     private var deviceChangeListener: (() -> Unit)? = null
     
+    // 追踪注册状态
+    private var isReceiverRegistered = false
+    private var isAudioCallbackRegistered = false
+    
     private val mainHandler = Handler(Looper.getMainLooper())
     
     enum class AudioDevice {
@@ -221,18 +225,32 @@ class MicLinkAudioManager(private val context: Context) {
     @Suppress("DEPRECATION")
     private fun registerDeviceListeners() {
         // 注册蓝牙广播接收器
-        val filter = IntentFilter().apply {
-            addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
-            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
-            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
-            addAction(AudioManager.ACTION_HEADSET_PLUG)
+        if (!isReceiverRegistered) {
+            try {
+                val filter = IntentFilter().apply {
+                    addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+                    addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                    addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                    addAction(AudioManager.ACTION_HEADSET_PLUG)
+                }
+                context.registerReceiver(bluetoothReceiver, filter)
+                isReceiverRegistered = true
+                Log.d(TAG, "Bluetooth receiver registered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register bluetooth receiver", e)
+            }
         }
-        context.registerReceiver(bluetoothReceiver, filter)
         
         // 注册音频设备回调
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioDeviceCallback?.let {
-                audioManager.registerAudioDeviceCallback(it, null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isAudioCallbackRegistered) {
+            try {
+                audioDeviceCallback?.let {
+                    audioManager.registerAudioDeviceCallback(it, null)
+                    isAudioCallbackRegistered = true
+                    Log.d(TAG, "Audio device callback registered")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register audio device callback", e)
             }
         }
     }
@@ -241,15 +259,27 @@ class MicLinkAudioManager(private val context: Context) {
      * 取消注册监听器
      */
     private fun unregisterDeviceListeners() {
-        try {
-            context.unregisterReceiver(bluetoothReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to unregister bluetooth receiver", e)
+        // 注销蓝牙广播接收器
+        if (isReceiverRegistered) {
+            try {
+                context.unregisterReceiver(bluetoothReceiver)
+                isReceiverRegistered = false
+                Log.d(TAG, "Bluetooth receiver unregistered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to unregister bluetooth receiver", e)
+            }
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioDeviceCallback?.let {
-                audioManager.unregisterAudioDeviceCallback(it)
+        // 注销音频设备回调
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isAudioCallbackRegistered) {
+            try {
+                audioDeviceCallback?.let {
+                    audioManager.unregisterAudioDeviceCallback(it)
+                    isAudioCallbackRegistered = false
+                    Log.d(TAG, "Audio device callback unregistered")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to unregister audio device callback", e)
             }
         }
     }

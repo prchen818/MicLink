@@ -35,6 +35,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     // 当前用户ID
     private var currentUserId: String? = null
     
+    // 追踪是否已经清理
+    private var isCleanedUp = false
+    
     // 通话状态
     private val _callState = MutableStateFlow<CallState>(CallState.Idle)
     val callState: StateFlow<CallState> = _callState.asStateFlow()
@@ -327,7 +330,10 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                     // 对方接受，开始WebRTC协商
                     _callState.value = CallState.Connecting
                     audioManager.start()
-                    startWebRtcNegotiation(isInitiator = true)
+                    // 在单独的协程中启动WebRTC协商，避免阻塞消息处理
+                    viewModelScope.launch {
+                        startWebRtcNegotiation(isInitiator = true)
+                    }
                 } else {
                     // 对方拒绝
                     _callState.value = CallState.Idle
@@ -338,14 +344,20 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             
             is SignalingMessageEvent.Offer -> {
                 // 收到Offer，创建Answer
-                Log.d(TAG, "Received Offer from ${event.from}, current state: ${_callState.value}")
-                handleOffer(event.from, event.sdp)
+                Log.d(TAG, "Received Offer from ${event.from}, current state: ${_callState.value}, peerUserId: ${_peerUserId.value}")
+                // 在单独的协程中处理Offer，避免阻塞消息处理
+                viewModelScope.launch {
+                    handleOffer(event.from, event.sdp)
+                }
             }
             
             is SignalingMessageEvent.Answer -> {
                 // 收到Answer
                 Log.d(TAG, "Received Answer from ${event.from}")
-                handleAnswer(event.sdp)
+                // 在单独的协程中处理Answer，避免阻塞消息处理
+                viewModelScope.launch {
+                    handleAnswer(event.sdp)
+                }
             }
             
             is SignalingMessageEvent.IceCandidate -> {
@@ -534,13 +546,17 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         _isSpeakerOn.value = false
         _connectionType.value = null
         
+        isCleanedUp = true
         Log.d(TAG, "Call ended")
     }
     
     override fun onCleared() {
         super.onCleared()
-        durationJob?.cancel()
-        audioManager.stop()
-        webRtcRepository.dispose()
+        if (!isCleanedUp) {
+            durationJob?.cancel()
+            audioManager.stop()
+            webRtcRepository.dispose()
+            isCleanedUp = true
+        }
     }
 }

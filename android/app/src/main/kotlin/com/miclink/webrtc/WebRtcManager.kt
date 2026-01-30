@@ -99,6 +99,13 @@ class WebRtcManager(
                 }
             }
 
+            override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState?) {
+                Log.d(TAG, "onIceGatheringChange: $newState")
+                if (newState == PeerConnection.IceGatheringState.COMPLETE) {
+                    Log.d(TAG, "ICE gathering completed!")
+                }
+            }
+
             override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState?) {
                 Log.d(TAG, "onIceConnectionChange: $newState")
                 newState?.let {
@@ -168,6 +175,7 @@ class WebRtcManager(
 
     /**
      * 创建Offer (发起方)
+     * 使用 Trickle ICE：立即返回 SDP，ICE 候选通过回调单独发送
      */
     suspend fun createOffer(): String? {
         return suspendCancellableCoroutine { continuation ->
@@ -176,14 +184,25 @@ class WebRtcManager(
                 mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
             }
 
+            var isResumed = false
+
             peerConnection?.createOffer(object : SdpObserver {
                 override fun onCreateSuccess(sdp: SessionDescription) {
                     peerConnection?.setLocalDescription(object : SdpObserver {
                         override fun onSetSuccess() {
-                            continuation.resume(sdp.description)
+                            Log.d(TAG, "Local description set successfully")
+                            if (!isResumed) {
+                                isResumed = true
+                                // 立即返回 SDP，不等待 ICE gathering 完成（Trickle ICE）
+                                continuation.resume(sdp.description)
+                            }
                         }
                         override fun onSetFailure(error: String) {
-                            continuation.resumeWithException(Exception(error))
+                            Log.e(TAG, "Failed to set local description: $error")
+                            if (!isResumed) {
+                                isResumed = true
+                                continuation.resumeWithException(Exception(error))
+                            }
                         }
                         override fun onCreateSuccess(p0: SessionDescription?) {}
                         override fun onCreateFailure(p0: String?) {}
@@ -191,7 +210,11 @@ class WebRtcManager(
                 }
 
                 override fun onCreateFailure(error: String) {
-                    continuation.resumeWithException(Exception(error))
+                    Log.e(TAG, "Failed to create offer: $error")
+                    if (!isResumed) {
+                        isResumed = true
+                        continuation.resumeWithException(Exception(error))
+                    }
                 }
 
                 override fun onSetSuccess() {}
@@ -202,6 +225,7 @@ class WebRtcManager(
 
     /**
      * 创建Answer (接收方)
+     * 使用 Trickle ICE：立即返回 SDP，ICE 候选通过回调单独发送
      */
     suspend fun createAnswer(): String? {
         return suspendCancellableCoroutine { continuation ->
@@ -210,14 +234,25 @@ class WebRtcManager(
                 mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
             }
 
+            var isResumed = false
+
             peerConnection?.createAnswer(object : SdpObserver {
                 override fun onCreateSuccess(sdp: SessionDescription) {
                     peerConnection?.setLocalDescription(object : SdpObserver {
                         override fun onSetSuccess() {
-                            continuation.resume(sdp.description)
+                            Log.d(TAG, "Local description (answer) set successfully")
+                            if (!isResumed) {
+                                isResumed = true
+                                // 立即返回 SDP，不等待 ICE gathering 完成（Trickle ICE）
+                                continuation.resume(sdp.description)
+                            }
                         }
                         override fun onSetFailure(error: String) {
-                            continuation.resumeWithException(Exception(error))
+                            Log.e(TAG, "Failed to set local description (answer): $error")
+                            if (!isResumed) {
+                                isResumed = true
+                                continuation.resumeWithException(Exception(error))
+                            }
                         }
                         override fun onCreateSuccess(p0: SessionDescription?) {}
                         override fun onCreateFailure(p0: String?) {}
@@ -225,7 +260,11 @@ class WebRtcManager(
                 }
 
                 override fun onCreateFailure(error: String) {
-                    continuation.resumeWithException(Exception(error))
+                    Log.e(TAG, "Failed to create answer: $error")
+                    if (!isResumed) {
+                        isResumed = true
+                        continuation.resumeWithException(Exception(error))
+                    }
                 }
 
                 override fun onSetSuccess() {}
