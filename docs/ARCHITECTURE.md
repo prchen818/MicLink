@@ -40,6 +40,7 @@
 │           UI Layer (Compose)        │
 │  - HomeScreen (在线用户列表)         │
 │  - CallScreen (通话界面)             │
+│  - IncomingCallActivity (全屏来电)   │
 │  - SettingsDialog (音质/模式选择)    │
 └──────────────┬──────────────────────┘
                │
@@ -63,8 +64,14 @@
 │ Network Layer   │    │   WebRTC Manager     │
 │ - WebSocket     │    │ - PeerConnection     │
 │ - SignalingAPI  │    │ - AudioManager       │
-└─────────────────┘    │ - ICE Handler        │
-                       └──────────────────────┘
+│ - NetworkMonitor│    │ - ICE Handler        │
+└─────────────────┘    └──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│         Service Layer               │
+│  - CallService (前台服务/保活)       │
+│  - WakeLock (CPU唤醒)               │
+└─────────────────────────────────────┘
 ```
 
 #### 1.2 关键类设计
@@ -399,6 +406,112 @@ class CallViewModel : ViewModel() {
     private val _isSpeakerOn = MutableStateFlow(false)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 }
+```
+
+### 6. 后台保活机制
+
+为了确保通话在应用切换到后台时不被系统终止，MicLink 使用以下机制：
+
+#### 6.1 前台服务 (CallService)
+
+```kotlin
+class CallService : Service() {
+    companion object {
+        const val NOTIFICATION_ID = 1001
+        const val CHANNEL_ID = "miclink_call_channel"
+    }
+    
+    // 启动前台服务
+    private fun startForegroundCall(peerId: String) {
+        val notification = createMinimalNotification()
+        startForeground(NOTIFICATION_ID, notification)
+        acquireWakeLock()
+    }
+    
+    // 最小化通知（低打扰）
+    private fun createMinimalNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("通话中")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .build()
+    }
+}
+```
+
+#### 6.2 WakeLock
+
+使用 `PARTIAL_WAKE_LOCK` 保持CPU运行，防止系统休眠导致连接断开：
+
+```kotlin
+val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+wakeLock = powerManager.newWakeLock(
+    PowerManager.PARTIAL_WAKE_LOCK,
+    "MicLink::CallWakeLock"
+).apply {
+    acquire(60 * 60 * 1000L)  // 最长1小时
+}
+```
+
+#### 6.3 生命周期管理
+
+```
+通话发起/来电 → 启动 CallService → 获取 WakeLock
+     │
+     └→ 通话中 (应用可在后台运行)
+            │
+            └→ 通话结束/挂断 → 停止 CallService → 释放 WakeLock
+```
+
+### 7. 全屏来电界面
+
+#### 7.1 IncomingCallActivity
+
+支持在锁屏状态下显示来电界面：
+
+```kotlin
+class IncomingCallActivity : ComponentActivity() {
+    
+    private fun setupWindowFlags() {
+        // Android 8.1+ API
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        
+        // 请求解锁键盘锁
+        val keyguardManager = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        keyguardManager.requestDismissKeyguard(this, null)
+        
+        // 保持屏幕常亮
+        window.addFlags(FLAG_KEEP_SCREEN_ON)
+    }
+}
+```
+
+#### 7.2 来电响铃与振动
+
+```kotlin
+// 播放系统铃声
+val ringtoneUri = RingtoneManager.getDefaultUri(TYPE_RINGTONE)
+ringtone = RingtoneManager.getRingtone(context, ringtoneUri)
+ringtone?.play()
+
+// 振动模式: 响 -> 停 -> 响 -> 停
+val pattern = longArrayOf(0, 1000, 500, 1000, 500)
+vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
+```
+
+#### 7.3 来电处理流程
+
+```
+来电信令到达 (SignalingMessageEvent.IncomingCall)
+     │
+     ├─→ 启动 CallService (保活)
+     │
+     └─→ 显示 IncomingCallActivity (全屏)
+              │
+              ├─→ 用户点击接听 → acceptCall()
+              │
+              └─→ 用户点击拒绝 → rejectCall()
 ```
 
 ## 性能优化

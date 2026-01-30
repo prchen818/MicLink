@@ -11,6 +11,8 @@ import com.miclink.network.NetworkMonitor
 import com.miclink.network.NetworkQuality
 import com.miclink.network.NetworkStatus
 import com.miclink.repository.*
+import com.miclink.service.MicLinkService
+import com.miclink.ui.IncomingCallActivity
 import com.miclink.webrtc.AudioDeviceInfo2
 import com.miclink.webrtc.MicLinkAudioManager
 import kotlinx.coroutines.Job
@@ -227,6 +229,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 _peerUserId.value = targetId
                 _callState.value = CallState.Ringing(targetId, isIncoming = false)
                 
+                // 启动通话服务
+                MicLinkService.startCall(getApplication(), targetId, isIncoming = false)
+                
                 // 发送通话请求
                 signalingRepository?.initiateCall(targetId, connectionMode, audioQuality)
                 
@@ -234,6 +239,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e(TAG, "Error initiating call", e)
                 _callState.value = CallState.Error(e.message ?: "发起通话失败")
+                currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
             }
         }
     }
@@ -279,6 +285,10 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             signalingRepository?.respondToCall(currentState.peerId, accepted = false)
             _callState.value = CallState.Idle
             _peerUserId.value = null
+            
+            // 回到在线状态
+            currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
+            
             Log.d(TAG, "Rejected call from ${currentState.peerId}")
         }
     }
@@ -323,6 +333,12 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 connectionMode = event.mode
                 audioQuality = event.quality
                 Log.d(TAG, "Incoming call from ${event.from}")
+                
+                // 显示全屏来电界面（在锁屏上也能显示）
+                showIncomingCallScreen(event.from)
+                
+                // 启动通话服务
+                MicLinkService.startCall(getApplication(), event.from, isIncoming = true)
             }
             
             is SignalingMessageEvent.CallResponse -> {
@@ -338,6 +354,8 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                     // 对方拒绝
                     _callState.value = CallState.Idle
                     _peerUserId.value = null
+                    // 回到在线状态
+                    currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
                     Log.d(TAG, "Call rejected by ${event.from}")
                 }
             }
@@ -539,6 +557,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         audioManager.stop()
         webRtcRepository.close()
         
+        // 回到在线状态
+        currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
+        
         _callState.value = CallState.Idle
         _peerUserId.value = null
         _callDuration.value = 0
@@ -552,11 +573,32 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     
     override fun onCleared() {
         super.onCleared()
+        // 清除来电回调
+        IncomingCallActivity.onCallResponse = null
+        
         if (!isCleanedUp) {
             durationJob?.cancel()
             audioManager.stop()
             webRtcRepository.dispose()
+            currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
             isCleanedUp = true
         }
+    }
+    
+    /**
+     * 显示全屏来电界面
+     */
+    private fun showIncomingCallScreen(callerId: String) {
+        // 设置来电响应回调
+        IncomingCallActivity.onCallResponse = { accepted ->
+            if (accepted) {
+                acceptCall()
+            } else {
+                rejectCall()
+            }
+        }
+        
+        // 显示来电界面
+        IncomingCallActivity.show(getApplication(), callerId)
     }
 }

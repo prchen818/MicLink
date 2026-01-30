@@ -17,21 +17,37 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- 唤醒锁定(保持通话期间屏幕常亮) -->
+    <!-- 唤醒锁定(保持通话期间CPU运行) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- 前台服务(用于通话保活) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- 振动权限(来电振动) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- 全屏通知权限(来电界面) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- 禁用锁屏(来电时) -->
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
 
     <application android:name=".MicLinkApp" android:allowBackup="true" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="@xml/backup_rules" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.MicLink" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" tools:targetApi="31">
 
+        <!-- 主Activity -->
         <activity android:name=".ui.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="portrait" android:theme="@style/Theme.MicLink">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 全屏来电界面 -->
+        <activity android:name=".ui.IncomingCallActivity" android:exported="false" android:excludeFromRecents="true" android:launchMode="singleInstance" android:screenOrientation="portrait" android:showOnLockScreen="true" android:turnScreenOn="true" android:theme="@style/Theme.MicLink" />
+
+        <!-- MicLink统一前台服务（在线状态 + 通话保活） -->
+        <service android:name=".service.MicLinkService" android:enabled="true" android:exported="false" android:foregroundServiceType="microphone" />
 
     </application>
 

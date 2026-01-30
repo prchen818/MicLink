@@ -8,6 +8,7 @@ import com.miclink.model.AudioQuality
 import com.miclink.model.ConnectionMode
 import com.miclink.repository.ConnectionState
 import com.miclink.repository.SignalingRepository
+import com.miclink.service.MicLinkService
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     private val TAG = "HomeViewModel"
+    private val context = application.applicationContext
     private val signalingRepository = SignalingRepository()
     
     // 当前用户ID
@@ -67,6 +69,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 
                 result.onSuccess {
                     Log.d(TAG, "Connected to server as $userId")
+                    // 上线，启动服务保持后台连接
+                    MicLinkService.goOnline(context, userId)
                 }
                 
                 result.onFailure { e ->
@@ -86,6 +90,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * 断开连接
      */
     fun disconnect() {
+        // 离线，停止服务
+        MicLinkService.goOffline(context)
         signalingRepository.disconnect()
         _currentUserId.value = null
         Log.d(TAG, "Disconnected from server")
@@ -116,6 +122,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     override fun onCleared() {
         super.onCleared()
-        disconnect()
+        // 注意：不在这里断开连接，让 SignalingService 保持后台连接
+        // 只有用户主动断开时才停止服务
+        Log.d(TAG, "HomeViewModel cleared, signaling service keeps running")
     }
 }
