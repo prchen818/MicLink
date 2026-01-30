@@ -5,6 +5,13 @@
 $env:JAVA_HOME = "D:\Android\Android Studio\jbr"
 $env:GRADLE_USER_HOME = "$env:USERPROFILE\.gradle"
 
+# MicLink 服务器配置（可选）
+# 取消注释以下行以配置服务器环境变量
+# $env:API_KEY = "your-api-key-here"
+# $env:SERVER_PORT = "8080"
+# $env:ENABLE_IP_WHITELIST = "false"
+# $env:ALLOWED_IPS = ""
+
 # 添加gradle bin目录到PATH (可选)
 # $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 

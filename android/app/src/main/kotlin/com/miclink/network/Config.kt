@@ -17,6 +17,14 @@ object Config {
     // 当前使用的服务器
     const val SERVER_URL = DEV_SERVER_URL
     
+    // ========== 安全配置 ==========
+    /**
+     * API密钥，用于服务器认证
+     * 重要: 在生产环境中，此密钥应与服务器端的API_KEY环境变量匹配
+     * 建议: 使用BuildConfig或更安全的方式存储此密钥
+     */
+    const val API_KEY = "miclink-default-key-change-in-production" // TODO: 修改为你的密钥
+    
     // ========== ICE服务器配置 ==========
     /**
      * 获取ICE服务器列表

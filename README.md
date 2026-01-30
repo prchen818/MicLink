@@ -21,14 +21,18 @@
 ./start-server.sh            # Linux/macOS
 ```
 
-### 2️⃣ 修改IP配置
+### 2️⃣ 修改IP和API密钥配置
 ```powershell
 # 获取IP: ipconfig (Windows) 或 ifconfig (Linux/macOS)
 ```
-编辑 `android/app/src/main/kotlin/com/miclink/network/Config.kt` 第11行:
+编辑 `android/app/src/main/kotlin/com/miclink/network/Config.kt`:
 ```kotlin
 private const val DEV_SERVER_IP = "192.168.1.100"  # 改成你的IP
+const val API_KEY = "miclink-default-key-change-in-production"  # 与服务器匹配
 ```
+
+**注意**: 生产环境请修改 `start-server.bat` 中的 API_KEY 为强随机密钥，并确保客户端配置相同的密钥。
+详见 [安全部署指南](docs/SECURITY.md)。
 
 ### 3️⃣ 编译安装
 ```powershell
@@ -50,6 +54,8 @@ cd android
 | 文档 | 说明 |
 |------|------|
 | [快速启动](docs/QUICKSTART.md) | ⚡ 最快5分钟上手 |
+| [安全部署](docs/SECURITY.md) | 🔒 API密钥和访问控制 |
+| [启动脚本](docs/STARTUP_SCRIPTS.md) | 🚀 start-server 脚本说明 |
 | [完整README](docs/README.md) | 📖 项目完整文档 |
 | [项目状态](docs/SUMMARY.md) | 📊 功能清单和进度 |
 | [架构设计](docs/ARCHITECTURE.md) | 🏗️ 系统架构详解 |

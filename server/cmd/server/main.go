@@ -4,15 +4,21 @@ import (
 	"log"
 	"net/http"
 
+	"miclink-server/internal/config"
+	"miclink-server/internal/middleware"
+	"miclink-server/internal/signaling"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"miclink-server/internal/signaling"
 )
 
 func main() {
+	// 加载配置
+	cfg := config.LoadConfig()
+
 	// 创建信令服务器
 	signalingServer := signaling.NewServer()
-	
+
 	// 启动信令服务器
 	go signalingServer.Run()
 
@@ -20,20 +26,20 @@ func main() {
 	router := gin.Default()
 
 	// 配置CORS
-	config := cors.DefaultConfig()
-	config.AllowAllOrigins = true
-	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type"}
-	router.Use(cors.New(config))
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowAllOrigins = true
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "X-API-Key", "Authorization"}
+	router.Use(cors.New(corsConfig))
 
-	// WebSocket路由
-	router.GET("/ws", func(c *gin.Context) {
+	// WebSocket路由 - 需要认证
+	router.GET("/ws", middleware.AuthMiddleware(), func(c *gin.Context) {
 		signalingServer.HandleWebSocket(c.Writer, c.Request)
 	})
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
+			"status":       "ok",
 			"online_users": len(signalingServer.GetOnlineUsers()),
 		})
 	})
@@ -46,8 +52,13 @@ func main() {
 	})
 
 	// 启动服务器
-	log.Println("MicLink Signaling Server starting on :8080")
-	if err := router.Run(":8080"); err != nil {
+	serverAddr := ":" + cfg.Port
+	log.Printf("MicLink Signaling Server starting on %s", serverAddr)
+	log.Println("Authentication: ENABLED")
+	if cfg.EnableIPWhitelist {
+		log.Println("IP Whitelist: ENABLED")
+	}
+	if err := router.Run(serverAddr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

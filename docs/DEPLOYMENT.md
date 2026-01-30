@@ -44,30 +44,34 @@
 
 #### 快速部署
 
-**方式一: 直接运行**
+**方式一: 使用启动脚本（推荐）**
+```bash
+# Linux/macOS
+chmod +x start-server.sh
+./start-server.sh
+
+# Windows
+.\start-server.bat
+```
+脚本会自动进行依赖下载、编译和启动
+
+**方式二: 手动编译运行**
 ```bash
 cd server
 go mod download
-go run cmd/server/main.go
-```
-
-**方式二: 编译后运行**
-```bash
-cd server
-go build -o miclink-server cmd/server/main.go
+go build -o bin/miclink-server cmd/server/main.go
 
 # Linux/macOS
-./miclink-server
+./bin/miclink-server
 
 # Windows
-miclink-server.exe
+.\bin\miclink-server.exe
 ```
 
 **方式三: Docker部署**
 ```bash
-cd server
-docker build -f ../docker/Dockerfile.server -t miclink-server .
-docker run -d -p 8080:8080 --name miclink miclink-server
+cd docker
+docker-compose up -d
 ```
 
 #### 配置文件

@@ -5,6 +5,8 @@
 *.so
 *.dylib
 miclink-server
+bin/
+dist/
 
 # Test binary
 *.test
@@ -38,6 +40,7 @@ Thumbs.db
 # Config files with secrets
 config/prod.yaml
 *.env
+.env
 
 # Logs
 *.log

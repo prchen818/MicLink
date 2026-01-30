@@ -26,8 +26,12 @@ class SignalingClient(
      * 连接到信令服务器
      */
     fun connect(userId: String): Flow<SignalingEvent> = callbackFlow {
+        // 在URL中添加API密钥作为查询参数
+        val authenticatedUrl = "$serverUrl?api_key=${Config.API_KEY}"
+        
         val request = Request.Builder()
-            .url(serverUrl)
+            .url(authenticatedUrl)
+            .addHeader("X-API-Key", Config.API_KEY) // 同时在Header中添加，双重保险
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {

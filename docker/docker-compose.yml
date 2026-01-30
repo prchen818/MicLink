@@ -9,6 +9,11 @@ services:
     container_name: miclink-signaling
     ports:
       - "8080:8080"
+    environment:
+      - API_KEY=${API_KEY:-miclink-default-key-change-in-production}
+      - SERVER_PORT=${SERVER_PORT:-8080}
+      - ENABLE_IP_WHITELIST=${ENABLE_IP_WHITELIST:-false}
+      - ALLOWED_IPS=${ALLOWED_IPS:-}
     restart: unless-stopped
     networks:
       - miclink
