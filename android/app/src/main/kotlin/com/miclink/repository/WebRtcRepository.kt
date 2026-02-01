@@ -40,6 +40,20 @@ class WebRtcRepository(private val context: Context) {
     val iceConnectionState: StateFlow<PeerConnection.IceConnectionState> = 
         _iceConnectionState.asStateFlow()
     
+    // ICE收集状态
+    private val _iceGatheringState = MutableStateFlow<PeerConnection.IceGatheringState>(
+        PeerConnection.IceGatheringState.NEW
+    )
+    val iceGatheringState: StateFlow<PeerConnection.IceGatheringState> =
+        _iceGatheringState.asStateFlow()
+    
+    // 信令状态
+    private val _signalingState = MutableStateFlow<PeerConnection.SignalingState>(
+        PeerConnection.SignalingState.STABLE
+    )
+    val signalingState: StateFlow<PeerConnection.SignalingState> =
+        _signalingState.asStateFlow()
+    
     // 静音状态
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
@@ -216,6 +230,32 @@ class WebRtcRepository(private val context: Context) {
     }
     
     /**
+     * 诊断ICE连接状态 - 返回诊断信息Map
+     */
+    fun diagnoseConnection(): Map<String, Any?> {
+        val diagnosis = mutableMapOf<String, Any?>()
+        
+        diagnosis["iceConnectionState"] = _iceConnectionState.value
+        diagnosis["iceGatheringState"] = _iceGatheringState.value
+        diagnosis["signalingState"] = _signalingState.value
+        diagnosis["peerConnectionState"] = _peerConnectionState.value
+        diagnosis["connectionType"] = _connectionType.value
+        diagnosis["isMuted"] = _isMuted.value
+        
+        // 调用WebRtcManager的诊断函数
+        webRtcManager?.let { manager ->
+            val iceDiagnosis = manager.diagnoseIceConnection()
+            diagnosis["totalCandidates"] = iceDiagnosis.totalCandidates
+            diagnosis["hasRelay"] = iceDiagnosis.hasRelay
+            diagnosis["hasHost"] = iceDiagnosis.hasHost
+            diagnosis["hasSrflx"] = iceDiagnosis.hasSrflx
+            diagnosis.putAll(iceDiagnosis.stats)
+        }
+        
+        return diagnosis
+    }
+    
+    /**
      * 订阅WebRTC状态变化
      */
     private fun subscribeToStates() {
@@ -224,6 +264,18 @@ class WebRtcRepository(private val context: Context) {
             manager.iceConnectionState.onEach { state ->
                 Log.d(TAG, "ICE connection state changed: $state")
                 _iceConnectionState.value = state
+            }.launchIn(repositoryScope)
+            
+            // 订阅 ICE 收集状态
+            manager.iceGatheringState.onEach { state ->
+                Log.d(TAG, "ICE gathering state changed: $state")
+                _iceGatheringState.value = state
+            }.launchIn(repositoryScope)
+            
+            // 订阅信令状态
+            manager.signalingState.onEach { state ->
+                Log.d(TAG, "Signaling state changed: $state")
+                _signalingState.value = state
             }.launchIn(repositoryScope)
             
             // 订阅对等连接状态

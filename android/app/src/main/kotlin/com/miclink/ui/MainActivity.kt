@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.miclink.model.CallState
+import com.miclink.network.Config
 import com.miclink.ui.screens.CallScreen
 import com.miclink.ui.screens.HomeScreen
 import com.miclink.ui.theme.MicLinkTheme
@@ -56,6 +57,9 @@ class MainActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 初始化配置
+        Config.init(this)
         
         // 检查并请求权限
         checkAndRequestPermissions()

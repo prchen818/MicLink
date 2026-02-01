@@ -20,6 +20,8 @@ build/
 
 # Local configuration
 local.properties
+local.config.properties
+app/src/main/assets/config.properties
 
 # NDK
 obj/

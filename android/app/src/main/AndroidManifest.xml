@@ -23,6 +23,8 @@
     <!-- 前台服务(用于通话保活) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
 
     <!-- 振动权限(来电振动) -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -43,11 +45,8 @@
             </intent-filter>
         </activity>
 
-        <!-- 全屏来电界面 -->
-        <activity android:name=".ui.IncomingCallActivity" android:exported="false" android:excludeFromRecents="true" android:launchMode="singleInstance" android:screenOrientation="portrait" android:showOnLockScreen="true" android:turnScreenOn="true" android:theme="@style/Theme.MicLink" />
-
         <!-- MicLink统一前台服务（在线状态 + 通话保活） -->
-        <service android:name=".service.MicLinkService" android:enabled="true" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".service.MicLinkService" android:enabled="true" android:exported="false" android:foregroundServiceType="phoneCall|microphone" />
 
     </application>
 

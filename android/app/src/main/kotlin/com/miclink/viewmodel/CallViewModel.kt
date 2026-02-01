@@ -7,12 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.miclink.model.AudioQuality
 import com.miclink.model.CallState
 import com.miclink.model.ConnectionMode
+import com.miclink.network.Config
 import com.miclink.network.NetworkMonitor
 import com.miclink.network.NetworkQuality
 import com.miclink.network.NetworkStatus
 import com.miclink.repository.*
 import com.miclink.service.MicLinkService
-import com.miclink.ui.IncomingCallActivity
 import com.miclink.webrtc.AudioDeviceInfo2
 import com.miclink.webrtc.MicLinkAudioManager
 import kotlinx.coroutines.Job
@@ -82,6 +82,10 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private val maxReconnectAttempts = 3
     private val reconnectDelayMs = 2000L
     
+    // 连接超时相关
+    private var connectionTimeoutJob: Job? = null
+    private val connectionTimeoutMs = 8000L  // 8秒超时
+    
     // 通话设置
     private var connectionMode = ConnectionMode.AUTO
     private var audioQuality = AudioQuality.MEDIUM
@@ -111,6 +115,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             webRtcRepository.iceConnectionState.collect { state ->
                 handleIceConnectionState(state)
+            }
+        }
+        
+        // 订阅 ICE 收集和信令状态，用于显示详细的连接阶段
+        viewModelScope.launch {
+            webRtcRepository.iceGatheringState.collect { state ->
+                updateConnectionStatus()
+            }
+        }
+        
+        viewModelScope.launch {
+            webRtcRepository.signalingState.collect { state ->
+                updateConnectionStatus()
             }
         }
         
@@ -235,6 +252,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 // 发送通话请求
                 signalingRepository?.initiateCall(targetId, connectionMode, audioQuality)
                 
+                // 启动连接超时检测 (8秒)
+                startConnectionTimeout()
+                
                 Log.d(TAG, "Initiated call to $targetId")
             } catch (e: Exception) {
                 Log.e(TAG, "Error initiating call", e)
@@ -256,13 +276,21 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val targetId = currentState.peerId
-                _callState.value = CallState.Connecting
+                _callState.value = CallState.Connecting(
+                    peerId = targetId,
+                    iceConnectionState = "CHECKING",
+                    signalingState = "STABLE",
+                    iceGatheringState = "GATHERING"
+                )
                 
                 // 启动音频管理器
                 audioManager.start()
                 
                 // 响应通话
                 signalingRepository?.respondToCall(targetId, accepted = true)
+                
+                // 启动连接超时检测 (8秒)
+                startConnectionTimeout()
                 
                 Log.d(TAG, "Accepted call from $targetId")
             } catch (e: Exception) {
@@ -344,7 +372,12 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             is SignalingMessageEvent.CallResponse -> {
                 if (event.accepted) {
                     // 对方接受，开始WebRTC协商
-                    _callState.value = CallState.Connecting
+                    _callState.value = CallState.Connecting(
+                        peerId = event.from,
+                        iceConnectionState = "CHECKING",
+                        signalingState = "STABLE",
+                        iceGatheringState = "GATHERING"
+                    )
                     audioManager.start()
                     // 在单独的协程中启动WebRTC协商，避免阻塞消息处理
                     viewModelScope.launch {
@@ -492,6 +525,25 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
+     * 更新连接状态显示 - 显示详细的WebRTC连接阶段
+     */
+    private suspend fun updateConnectionStatus() {
+        val currentCallState = _callState.value
+        if (currentCallState !is CallState.Connecting) return
+        
+        val iceConnState = webRtcRepository.iceConnectionState.value?.name ?: "UNKNOWN"
+        val iceGatherState = webRtcRepository.iceGatheringState.value?.name ?: "NEW"
+        val signalingState = webRtcRepository.signalingState.value?.name ?: "STABLE"
+        
+        _callState.value = CallState.Connecting(
+            peerId = currentCallState.peerId,
+            iceConnectionState = iceConnState,
+            signalingState = signalingState,
+            iceGatheringState = iceGatherState
+        )
+    }
+    
+    /**
      * 处理ICE连接状态变化
      */
     private fun handleIceConnectionState(state: PeerConnection.IceConnectionState) {
@@ -507,6 +559,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
                 Log.d(TAG, "ICE connection established with $peerId")
+                cancelConnectionTimeout()  // 取消连接超时
                 _callState.value = CallState.Connected(
                     peerId,
                     _connectionType.value ?: "unknown"
@@ -515,9 +568,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             PeerConnection.IceConnectionState.FAILED,
+            PeerConnection.IceConnectionState.CLOSED,
             PeerConnection.IceConnectionState.DISCONNECTED -> {
-                // 连接失败或断开
+                // 连接失败或断开 - 收集诊断信息
                 Log.w(TAG, "ICE connection failed or disconnected: $state")
+                
+                // 异步收集诊断信息（延迟执行，确保候选收集完成）
+                viewModelScope.launch {
+                    delay(500)  // 等待候选完全收集
+                    collectIceDiagnostics(state)
+                }
+                
+                // 只在 Connected 状态时自动结束通话
+                // 在 Connecting 状态时保持，用户可手动挂断或重试
                 if (_callState.value is CallState.Connected) {
                     endCall()
                 }
@@ -531,6 +594,152 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 // 其他状态
                 Log.d(TAG, "ICE connection state: $state")
             }
+        }
+    }
+    
+    /**
+     * 收集 ICE 连接诊断信息 - 用于调试 TURN 连接失败
+     */
+    private fun collectIceDiagnostics(failureState: PeerConnection.IceConnectionState) {
+        viewModelScope.launch {
+            try {
+                val diagnosis = webRtcRepository.diagnoseConnection()
+                
+                Log.e(TAG, """
+                    ╔══════════════════════════════════════════════════════════╗
+                    ║           ICE 连接失败诊断信息 (调试用)                    ║
+                    ╠══════════════════════════════════════════════════════════╣
+                    ║ 连接模式: $connectionMode
+                    ║ 音质设置: $audioQuality
+                    ║ 失败状态: $failureState
+                    ║ ─────────────────────────────────────────────────────── ║
+                    ║ ICE连接状态: ${diagnosis["iceConnectionState"]}
+                    ║ ICE收集状态: ${diagnosis["iceGatheringState"]}
+                    ║ 信令状态: ${diagnosis["signalingState"]}
+                    ║ ─────────────────────────────────────────────────────── ║
+                    ║ 候选统计:
+                    ║   ├─ 总计: ${diagnosis["totalCandidates"]} 个
+                    ║   ├─ 中转(RELAY): ${diagnosis["hasRelay"]}
+                    ║   ├─ 本地(HOST): ${diagnosis["hasHost"]}
+                    ║   └─ P2P(SRFLX): ${diagnosis["hasSrflx"]}
+                    ║ ─────────────────────────────────────────────────────── ║
+                    ║ 详细信息:
+                    ║ ${formatDiagnosticsDetails(diagnosis)}
+                    ╚══════════════════════════════════════════════════════════╝
+                """.trimIndent())
+                
+                // 根据诊断结果提供建议
+                provideDiagnosticsSuggestions(diagnosis, failureState)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error collecting ICE diagnostics", e)
+            }
+        }
+    }
+    
+    /**
+     * 格式化诊断详情
+     */
+    private fun formatDiagnosticsDetails(diagnosis: Map<String, Any?>): String {
+        val sb = StringBuilder()
+        val excludeKeys = setOf("totalCandidates", "hasRelay", "hasHost", "hasSrflx", 
+                              "iceConnectionState", "iceGatheringState", "signalingState")
+        
+        diagnosis.forEach { (key, value) ->
+            if (!excludeKeys.contains(key) && value != null) {
+                sb.append("║   $key: $value\n")
+            }
+        }
+        return sb.toString().trimEnd()
+    }
+    
+    /**
+     * 根据诊断结果提供建议
+     */
+    private fun provideDiagnosticsSuggestions(diagnosis: Map<String, Any?>, 
+                                            failureState: PeerConnection.IceConnectionState) {
+        val suggestions = mutableListOf<String>()
+        
+        val hasRelay = diagnosis["hasRelay"] as? Boolean ?: false
+        val hasHost = diagnosis["hasHost"] as? Boolean ?: false
+        val hasSrflx = diagnosis["hasSrflx"] as? Boolean ?: false
+        val totalCandidates = diagnosis["totalCandidates"] as? Int ?: 0
+        
+        when {
+            // RELAY_ONLY 模式诊断
+            connectionMode == ConnectionMode.RELAY_ONLY -> {
+                when {
+                    !hasRelay -> {
+                        suggestions.add("❌ 未获得TURN中转候选")
+                        suggestions.add("📋 可能原因:")
+                        suggestions.add("   1. TURN服务器不可达 (check firewall/DNS)")
+                        suggestions.add("   2. TURN认证失败 (check username/password)")
+                        suggestions.add("   3. TURN服务器地址错误或端口错误")
+                        suggestions.add("✅ 解决方案:")
+                        suggestions.add("   - 检查 Config.turn:${Config.DEV_SERVER_IP}:3478 配置")
+                        suggestions.add("   - 测试TURN服务器: stunclient ${Config.DEV_SERVER_IP} 3478")
+                        suggestions.add("   - 查看服务器日志: /var/log/coturn/")
+                    }
+                    totalCandidates == 0 -> {
+                        suggestions.add("⚠️ 完全没有收集到任何候选")
+                        suggestions.add("可能是DNS解析失败或网络完全不通")
+                    }
+                    else -> {
+                        suggestions.add("✅ 有TURN候选，但连接失败")
+                        suggestions.add("可能是NAT穿透问题或TURN服务器负载过高")
+                    }
+                }
+            }
+            
+            // AUTO 模式诊断
+            connectionMode == ConnectionMode.AUTO -> {
+                when {
+                    !hasSrflx && !hasRelay -> {
+                        suggestions.add("❌ 既无P2P候选也无TURN候选")
+                        suggestions.add("建议检查网络连接和DNS解析")
+                    }
+                    hasSrflx && !hasRelay -> {
+                        suggestions.add("✓ P2P候选存在，但连接失败")
+                        suggestions.add("可能是NAT类型不兼容或防火墙阻止")
+                    }
+                    hasRelay -> {
+                        suggestions.add("✓ TURN候选存在，降级到中转模式")
+                        suggestions.add("如果仍连接失败，检查TURN服务器负载")
+                    }
+                }
+            }
+            
+            // P2P_ONLY 模式诊断
+            connectionMode == ConnectionMode.P2P_ONLY -> {
+                when {
+                    !hasSrflx -> {
+                        suggestions.add("❌ 无P2P候选 (STUN反射失败)")
+                        suggestions.add("可能原因:")
+                        suggestions.add("   - STUN服务器不可达")
+                        suggestions.add("   - NAT类型过于严格 (Symmetric NAT)")
+                        suggestions.add("✅ 解决方案: 切换为AUTO或RELAY_ONLY模式")
+                    }
+                }
+            }
+        }
+        
+        // 通用建议
+        if (failureState == PeerConnection.IceConnectionState.FAILED) {
+            suggestions.add("\n🔍 通用调试步骤:")
+            suggestions.add("1. 查看 logcat 日志: adb logcat | grep WebRtcManager")
+            suggestions.add("2. 测试网络连通性: ping ${Config.DEV_SERVER_IP}")
+            suggestions.add("3. 对端是否也连接失败?")
+            suggestions.add("4. 是否需要切换连接模式?")
+        }
+        
+        if (suggestions.isNotEmpty()) {
+            Log.i(TAG, """
+                ╔══════════════════════════════════════════════════════════╗
+                ║              ICE 连接失败诊断建议                          ║
+                ╠══════════════════════════════════════════════════════════╣
+                ${suggestions.mapIndexed { i, s -> "║ $s" }.joinToString("\n")}
+                ╚══════════════════════════════════════════════════════════╝
+            """.trimIndent())
         }
     }
     
@@ -550,10 +759,52 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
+     * 启动连接超时检测 (8秒)
+     * 如果在规定时间内没有建立连接，则显示超时错误
+     */
+    private fun startConnectionTimeout() {
+        connectionTimeoutJob?.cancel()
+        
+        connectionTimeoutJob = viewModelScope.launch {
+            delay(connectionTimeoutMs)
+            
+            // 如果仍在 Connecting 或 Ringing 状态，说明连接超时
+            val currentState = _callState.value
+            if (currentState is CallState.Connecting) {
+                Log.w(TAG, "Connection timeout after ${connectionTimeoutMs}ms")
+                
+                // 确定错误消息
+                val errorMessage = when {
+                    connectionMode == ConnectionMode.RELAY_ONLY -> 
+                        "连接超时 - TURN 服务器可能不可用"
+                    else -> 
+                        "连接超时 - 请检查网络或对方状态"
+                }
+                
+                _callState.value = CallState.Error(errorMessage)
+                endCall()
+            } else if (currentState is CallState.Ringing && currentState.isIncoming) {
+                // 来电铃声超时（默认20秒未接听会自动挂断）
+                Log.w(TAG, "Incoming call timeout")
+            }
+        }
+    }
+    
+    /**
+     * 取消连接超时检测
+     * 当连接成功或通话结束时调用
+     */
+    private fun cancelConnectionTimeout() {
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = null
+    }
+    
+    /**
      * 结束通话
      */
     private fun endCall() {
         durationJob?.cancel()
+        connectionTimeoutJob?.cancel()
         audioManager.stop()
         webRtcRepository.close()
         
@@ -573,11 +824,10 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     
     override fun onCleared() {
         super.onCleared()
-        // 清除来电回调
-        IncomingCallActivity.onCallResponse = null
         
         if (!isCleanedUp) {
             durationJob?.cancel()
+            connectionTimeoutJob?.cancel()  // 取消连接超时
             audioManager.stop()
             webRtcRepository.dispose()
             currentUserId?.let { MicLinkService.endCall(getApplication(), it) }
@@ -586,19 +836,13 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * 显示全屏来电界面
+     * 显示来电界面 - 通过改变状态，在app内全屏显示
      */
     private fun showIncomingCallScreen(callerId: String) {
-        // 设置来电响应回调
-        IncomingCallActivity.onCallResponse = { accepted ->
-            if (accepted) {
-                acceptCall()
-            } else {
-                rejectCall()
-            }
-        }
-        
-        // 显示来电界面
-        IncomingCallActivity.show(getApplication(), callerId)
+        // 直接改变通话状态为Ringing(来电)，UI会自动显示来电界面
+        _callState.value = CallState.Ringing(
+            peerId = callerId,
+            isIncoming = true
+        )
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.miclink.model.CallState
 import com.miclink.network.NetworkQuality
@@ -155,12 +156,25 @@ fun CallScreen(
                             if ((callState as CallState.Ringing).isIncoming) "来电中..."
                             else "呼叫中..."
                         }
-                        is CallState.Connecting -> "连接中..."
+                        is CallState.Connecting -> {
+                            val state = callState as CallState.Connecting
+                            buildString {
+                                append("连接中\n")
+                                append("ICE: ${formatIceConnectionState(state.iceConnectionState.toString())} | ")
+                                append("收集候选: ${formatIceGatheringState(state.iceGatheringState.toString())}\n")
+                                append("信令: ${formatSignalingState(state.signalingState.toString())}")
+                                if (state.errorMessage != null) {
+                                    append("\n❌ ${state.errorMessage}")
+                                }
+                            }
+                        }
                         is CallState.Connected -> formatDuration(callDuration)
                         else -> ""
                     },
                     style = MaterialTheme.typography.titleLarge,
-                    color = MicLinkColors.Primary
+                    color = if ((callState as? CallState.Connecting)?.errorMessage != null) 
+                        MicLinkColors.Error else MicLinkColors.Primary,
+                    textAlign = TextAlign.Center
                 )
                 
                 // 连接类型标签
@@ -561,3 +575,47 @@ fun formatDuration(seconds: Int): String {
         String.format("%02d:%02d", minutes, secs)
     }
 }
+
+/**
+ * 将 ICE 连接状态转换为中文描述
+ */
+fun formatIceConnectionState(state: String): String {
+    return when (state.uppercase()) {
+        "NEW" -> "新建"
+        "CHECKING" -> "检查中"
+        "CONNECTED" -> "已连接"
+        "COMPLETED" -> "已完成"
+        "FAILED" -> "失败"
+        "DISCONNECTED" -> "已断开"
+        "CLOSED" -> "已关闭"
+        else -> state
+    }
+}
+
+/**
+ * 将 ICE 收集状态转换为中文描述
+ */
+fun formatIceGatheringState(state: String): String {
+    return when (state.uppercase()) {
+        "NEW" -> "新建"
+        "GATHERING" -> "收集中"
+        "COMPLETE" -> "收集完成"
+        else -> state
+    }
+}
+
+/**
+ * 将信令状态转换为中文描述
+ */
+fun formatSignalingState(state: String): String {
+    return when (state.uppercase()) {
+        "STABLE" -> "稳定"
+        "HAVE_LOCAL_OFFER" -> "本地Offer"
+        "HAVE_REMOTE_OFFER" -> "远程Offer"
+        "HAVE_LOCAL_PRANSWER" -> "本地临时Answer"
+        "HAVE_REMOTE_PRANSWER" -> "远程临时Answer"
+        "CLOSED" -> "已关闭"
+        else -> state
+    }
+}
+

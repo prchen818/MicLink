@@ -44,10 +44,16 @@ class CallViewModelTest {
     @Test
     fun `CallState Connecting represents mid-setup phase`() {
         // When
-        val state = CallState.Connecting
+        val state = CallState.Connecting(
+            peerId = "peer123",
+            iceConnectionState = "CHECKING",
+            signalingState = "STABLE",
+            iceGatheringState = "GATHERING"
+        )
 
         // Then
         assertTrue(state is CallState.Connecting)
+        assertEquals("peer123", state.peerId)
     }
 
     @Test

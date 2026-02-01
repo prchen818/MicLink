@@ -46,10 +46,17 @@ class ModelTest {
     @Test
     fun `CallState Connecting should be correct type`() {
         // When
-        val state = CallState.Connecting
+        val state = CallState.Connecting(
+            peerId = "peer123",
+            iceConnectionState = "CHECKING",
+            signalingState = "STABLE",
+            iceGatheringState = "GATHERING"
+        )
 
         // Then
         assertTrue(state is CallState.Connecting)
+        assertEquals("peer123", state.peerId)
+        assertEquals("CHECKING", state.iceConnectionState)
     }
 
     @Test

@@ -28,7 +28,13 @@ enum class AudioQuality(
 sealed class CallState {
     object Idle : CallState()
     data class Ringing(val peerId: String, val isIncoming: Boolean) : CallState()
-    object Connecting : CallState()
+    data class Connecting(
+        val peerId: String,
+        val iceConnectionState: String = "NEW",           // ICE连接状态
+        val signalingState: String = "STABLE",            // 信令状态
+        val iceGatheringState: String = "NEW",            // ICE收集状态
+        val errorMessage: String? = null                  // 错误信息（如有）
+    ) : CallState()
     data class Connected(
         val peerId: String,
         val connectionType: String // "p2p" or "relay"

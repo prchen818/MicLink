@@ -1,29 +1,82 @@
 package com.miclink.network
 
+import android.content.Context
 import org.webrtc.PeerConnection
+import java.util.*
 
 /**
  * 全局配置
+ * 配置从 assets/config.properties 文件读取
  */
 object Config {
+    // 加载本地配置文件
+    private val localConfig: Properties = Properties()
+    private var isInitialized = false
+    
+    /**
+     * 初始化配置 - 必须在应用启动时调用一次
+     * @param context Android context
+     */
+    fun init(context: Context) {
+        if (isInitialized) return
+        
+        loadLocalConfig(context)
+        isInitialized = true
+    }
+    
+    /**
+     * 从 assets/config.properties 文件加载配置
+     */
+    private fun loadLocalConfig(context: Context) {
+        try {
+            context.assets.open("config.properties").use { input ->
+                localConfig.load(input)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // 异常时使用默认值
+            setDefaultValues()
+        }
+    }
+    
+    /**
+     * 设置默认值
+     */
+    private fun setDefaultValues() {
+        localConfig.setProperty("DEV_SERVER_IP", "localhost")
+        localConfig.setProperty("DEV_SERVER_PORT", "27890")
+        localConfig.setProperty("API_KEY", "default-key")
+        localConfig.setProperty("WS_PATH", "/ws")
+    }
+    
     // ========== 服务器配置 ==========
-    // 开发环境 - 使用本地IP (请替换为你的电脑IP)
-    private const val DEV_SERVER_IP = "192.168.0.106" // TODO: 修改为你的IP
-    const val DEV_SERVER_URL = "ws://$DEV_SERVER_IP:8080/ws"
+    // 开发环境 - 从 local.config.properties 动态读取
+    val DEV_SERVER_IP: String
+        get() = localConfig.getProperty("DEV_SERVER_IP", "localhost")
+    
+    val DEV_SERVER_PORT: String
+        get() = localConfig.getProperty("DEV_SERVER_PORT", "8080")
+
+    val WS_PATH: String
+        get() = localConfig.getProperty("WS_PATH", "/ws")
+    
+    val DEV_SERVER_URL: String
+        get() = "ws://$DEV_SERVER_IP:$DEV_SERVER_PORT$WS_PATH"
     
     // 生产环境 - 使用域名
     const val PROD_SERVER_URL = "wss://your-domain.com/ws"
     
     // 当前使用的服务器
-    const val SERVER_URL = DEV_SERVER_URL
+    val SERVER_URL: String
+        get() = DEV_SERVER_URL
     
     // ========== 安全配置 ==========
     /**
      * API密钥，用于服务器认证
-     * 重要: 在生产环境中，此密钥应与服务器端的API_KEY环境变量匹配
-     * 建议: 使用BuildConfig或更安全的方式存储此密钥
+     * 从 local.config.properties 动态读取
      */
-    const val API_KEY = "miclink-default-key-change-in-production" // TODO: 修改为你的密钥
+    val API_KEY: String
+        get() = localConfig.getProperty("API_KEY", "default-key")
     
     // ========== ICE服务器配置 ==========
     /**
@@ -45,11 +98,10 @@ object Config {
                 .createIceServer(),
             
             // 自建TURN服务器 (强烈推荐 - 需要部署coturn)
-            // 阿里云/腾讯云不提供公共STUN服务器，建议在云服务器上部署自己的TURN服务器
-            // PeerConnection.IceServer.builder("turn:$DEV_SERVER_IP:3478")
-            //     .setUsername("") // 使用静态密钥认证时留空
-            //     .setPassword("miclink-secret-change-this-in-production")
-            //     .createIceServer()
+            PeerConnection.IceServer.builder("turn:$DEV_SERVER_IP:3478")
+                .setUsername("miclink")
+                .setPassword(API_KEY)
+                .createIceServer()
         )
     }
     

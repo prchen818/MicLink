@@ -39,8 +39,7 @@
 ┌─────────────────────────────────────┐
 │           UI Layer (Compose)        │
 │  - HomeScreen (在线用户列表)         │
-│  - CallScreen (通话界面)             │
-│  - IncomingCallActivity (全屏来电)   │
+│  - CallScreen (通话/来电界面)       │
 │  - SettingsDialog (音质/模式选择)    │
 └──────────────┬──────────────────────┘
                │
@@ -463,55 +462,54 @@ wakeLock = powerManager.newWakeLock(
             └→ 通话结束/挂断 → 停止 CallService → 释放 WakeLock
 ```
 
-### 7. 全屏来电界面
+### 7. 来电界面
 
-#### 7.1 IncomingCallActivity
+#### 7.1 应用内全屏来电显示
 
-支持在锁屏状态下显示来电界面：
+来电时通过改变 `CallState` 为 `Ringing(isIncoming=true)` 来触发，应用在内部全屏显示来电界面：
+
+**流程**：
+1. 收到信令消息 `SignalingMessageEvent.IncomingCall`
+2. CallViewModel 改变状态：`_callState.value = CallState.Ringing(peerId=..., isIncoming=true)`
+3. MicLinkApp() 的 when 语句检测到非 Idle 状态，显示 CallScreen
+4. CallScreen 检测 isIncoming=true，显示"接听/拒绝"按钮
 
 ```kotlin
-class IncomingCallActivity : ComponentActivity() {
-    
-    private fun setupWindowFlags() {
-        // Android 8.1+ API
-        setShowWhenLocked(true)
-        setTurnScreenOn(true)
-        
-        // 请求解锁键盘锁
-        val keyguardManager = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
-        keyguardManager.requestDismissKeyguard(this, null)
-        
-        // 保持屏幕常亮
-        window.addFlags(FLAG_KEEP_SCREEN_ON)
-    }
+// CallViewModel.kt
+private fun showIncomingCallScreen(callerId: String) {
+    _callState.value = CallState.Ringing(
+        peerId = callerId,
+        isIncoming = true
+    )
+}
+
+// MainActivity.kt (MicLinkApp)
+when (callState) {
+    is CallState.Idle -> HomeScreen(...)
+    else -> CallScreen(...)  // 包括来电、连接中、通话中
 }
 ```
 
-#### 7.2 来电响铃与振动
+**优势**：
+- ✅ 应用内全屏显示，无需启动额外 Activity
+- ✅ 与主应用保持统一的 UI 风格
+- ✅ 来电界面包含呼吸脉冲动画和清晰的接听/拒绝按钮
+- ✅ 代码简化，易于维护
 
-```kotlin
-// 播放系统铃声
-val ringtoneUri = RingtoneManager.getDefaultUri(TYPE_RINGTONE)
-ringtone = RingtoneManager.getRingtone(context, ringtoneUri)
-ringtone?.play()
-
-// 振动模式: 响 -> 停 -> 响 -> 停
-val pattern = longArrayOf(0, 1000, 500, 1000, 500)
-vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
-```
-
-#### 7.3 来电处理流程
+#### 7.2 来电处理流程
 
 ```
 来电信令到达 (SignalingMessageEvent.IncomingCall)
      │
-     ├─→ 启动 CallService (保活)
+     ├─→ 启动 MicLinkService (保活)
      │
-     └─→ 显示 IncomingCallActivity (全屏)
+     └─→ 改变 CallState 为 Ringing
               │
-              ├─→ 用户点击接听 → acceptCall()
-              │
-              └─→ 用户点击拒绝 → rejectCall()
+              └─→ CallScreen 显示来电界面 (应用内全屏)
+                   │
+                   ├─→ 用户点击接听 → acceptCall()
+                   │
+                   └─→ 用户点击拒绝 → rejectCall()
 ```
 
 ## 性能优化
